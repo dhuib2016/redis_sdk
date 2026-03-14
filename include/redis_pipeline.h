@@ -30,6 +30,10 @@ public:
         pipeline_.del(key);
     }
 
+    void rpush(const std::string& key, const std::vector<std::string>& values) {
+        pipeline_.rpush(key, values.begin(), values.end());
+    }
+
     // 将 GET 命令加入 pipeline；调用 exec() 时统一发送
     void get(const std::string& key) {
         pipeline_.get(key);

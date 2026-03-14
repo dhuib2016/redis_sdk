@@ -1,4 +1,5 @@
 #include "redis_client.h"
+#include "redis_pipeline.h"
 #include <iostream>
 #include <chrono>
 #include <vector>
@@ -14,9 +15,10 @@ int main()
         return 1;
     }
 
-    const int N = 100000;  // 测试次数
+    const int N = 100000;
+    const int BATCH = 1000;
 
-    // 简单的 SET 性能测试
+    // SET sequential
     {
         auto start = high_resolution_clock::now();
 
@@ -30,12 +32,35 @@ int main()
         auto ms = duration_cast<milliseconds>(end - start).count();
         double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
 
-        std::cout << "[SET]   count=" << N
-                  << ", total=" << ms << " ms"
+        std::cout << "[SET sequential]  count=" << N
+                  << ", total=" << ms << "ms"
                   << ", qps=" << qps << std::endl;
     }
 
-    // 简单的 GET 性能测试
+    // SET pipelined
+    {
+        auto start = high_resolution_clock::now();
+
+        for (int i = 0; i < N; i += BATCH) {
+            auto pipe = redis.pipeline();
+            for (int j = i; j < i + BATCH && j < N; ++j) {
+                pipe.set("perf:set:" + std::to_string(j),
+                         "value-" + std::to_string(j));
+            }
+            pipe.exec();
+        }
+
+        auto end = high_resolution_clock::now();
+        auto ms = duration_cast<milliseconds>(end - start).count();
+        double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
+
+        std::cout << "[SET pipelined]   count=" << N
+                  << ", batch=" << BATCH
+                  << ", total=" << ms << "ms"
+                  << ", qps=" << qps << std::endl;
+    }
+
+    // GET sequential
     {
         auto start = high_resolution_clock::now();
 
@@ -49,49 +74,98 @@ int main()
         auto ms = duration_cast<milliseconds>(end - start).count();
         double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
 
-        std::cout << "[GET]   count=" << N
-                  << ", total=" << ms << " ms"
+        std::cout << "[GET sequential]  count=" << N
+                  << ", total=" << ms << "ms"
                   << ", qps=" << qps << std::endl;
     }
 
-    // list 批量写/读性能测试（使用 SetData / GetData）
+    // GET pipelined
     {
-        const int M = 1000;
-        std::vector<std::string> values;
-        values.reserve(M);
-        for (int i = 0; i < M; ++i) {
-            values.emplace_back("item-" + std::to_string(i));
+        auto start = high_resolution_clock::now();
+
+        for (int i = 0; i < N; i += BATCH) {
+            auto pipe = redis.pipeline();
+            for (int j = i; j < i + BATCH && j < N; ++j) {
+                pipe.get("perf:set:" + std::to_string(j));
+            }
+            pipe.exec();
         }
 
-        auto start = high_resolution_clock::now();
-        for (int i = 0; i < N; ++i) {
-            std::string key = "perf:list:" + std::to_string(i);
-            redis.SetData(key, values, false);
-        }
         auto end = high_resolution_clock::now();
         auto ms = duration_cast<milliseconds>(end - start).count();
         double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
 
-        std::cout << "[LIST-SET]   keys=" << N
-                  << ", list_len=" << M
-                  << ", total=" << ms << " ms"
+        std::cout << "[GET pipelined]   count=" << N
+                  << ", batch=" << BATCH
+                  << ", total=" << ms << "ms"
                   << ", qps=" << qps << std::endl;
+    }
 
-        // 读回 list
-        start = high_resolution_clock::now();
-        std::vector<std::string> out;
-        for (int i = 0; i < N; ++i) {
-            std::string key = "perf:list:" + std::to_string(i);
-            redis.GetData(key, out);
+    // LIST-SET sequential + GET + pipelined SET
+    {
+        const int M = 1000;
+        std::vector<std::string> values;
+        values.reserve(M);
+        for (int i = 0; i < M; ++i)
+            values.emplace_back("item-" + std::to_string(i));
+
+        // LIST-SET sequential
+        {
+            auto start = high_resolution_clock::now();
+            for (int i = 0; i < N; ++i) {
+                std::string key = "perf:list:" + std::to_string(i);
+                redis.SetData(key, values, false);
+            }
+            auto end = high_resolution_clock::now();
+            auto ms = duration_cast<milliseconds>(end - start).count();
+            double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
+
+            std::cout << "[LIST-SET sequential]  keys=" << N
+                      << ", list_len=" << M
+                      << ", total=" << ms << "ms"
+                      << ", qps=" << qps << std::endl;
         }
-        end = high_resolution_clock::now();
-        ms = duration_cast<milliseconds>(end - start).count();
-        qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
 
-        std::cout << "[LIST-GET]   keys=" << N
-                  << ", list_len=" << M
-                  << ", total=" << ms << " ms"
-                  << ", qps=" << qps << std::endl;
+        // LIST-SET pipelined
+        {
+            auto start = high_resolution_clock::now();
+            for (int i = 0; i < N; i += BATCH) {
+                auto pipe = redis.pipeline();
+                for (int j = i; j < i + BATCH && j < N; ++j) {
+                    std::string key = "perf:list:" + std::to_string(j);
+                    pipe.del(key);
+                    pipe.rpush(key, values);
+                }
+                pipe.exec();
+            }
+            auto end = high_resolution_clock::now();
+            auto ms = duration_cast<milliseconds>(end - start).count();
+            double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
+
+            std::cout << "[LIST-SET pipelined]   keys=" << N
+                      << ", list_len=" << M
+                      << ", batch=" << BATCH
+                      << ", total=" << ms << "ms"
+                      << ", qps=" << qps << std::endl;
+        }
+
+        // LIST-GET sequential
+        {
+            auto start = high_resolution_clock::now();
+            std::vector<std::string> out;
+            for (int i = 0; i < N; ++i) {
+                std::string key = "perf:list:" + std::to_string(i);
+                redis.GetData(key, out);
+            }
+            auto end = high_resolution_clock::now();
+            auto ms = duration_cast<milliseconds>(end - start).count();
+            double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
+
+            std::cout << "[LIST-GET]   keys=" << N
+                      << ", list_len=" << M
+                      << ", total=" << ms << "ms"
+                      << ", qps=" << qps << std::endl;
+        }
     }
 
     return 0;

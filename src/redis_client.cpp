@@ -15,7 +15,8 @@ namespace msgsdk
     RedisClient::~RedisClient()
     {
         running_ = false;
-        
+        sub_.reset();   // unblocks consume()
+
         if (sub_thread_.joinable())
             sub_thread_.join();
     }
@@ -36,15 +37,22 @@ namespace msgsdk
     
     bool RedisClient::confConnect()
     {
-        ConnectionOptions opts;
-        opts.host = ip_;
-        opts.port = port_;
-        
-        if (!auth_.empty())
-            opts.password = auth_;
-        
-        redis_ = std::make_unique<Redis>(opts);
-        return true;
+        try
+        {
+            ConnectionOptions opts;
+            opts.host = ip_;
+            opts.port = port_;
+
+            if (!auth_.empty())
+                opts.password = auth_;
+
+            redis_ = std::make_unique<Redis>(opts);
+            return true;
+        }
+        catch (...)
+        {
+            return false;
+        }
     }
     
     bool RedisClient::SelectDB(int index)

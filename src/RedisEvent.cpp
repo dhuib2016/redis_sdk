@@ -11,6 +11,8 @@ RedisEventProcessor::RedisEventProcessor()
 RedisEventProcessor::~RedisEventProcessor()
 {
     _running=false;
+    _subscriber.reset();    // unblocks GuardLoop's consume()
+    _cond.notify_all();     // unblocks WorkerLoop's wait()
 
     if(_guardThread.joinable())
         _guardThread.join();
@@ -105,6 +107,8 @@ void RedisEventProcessor::UnSubscribeAll()
 
     for(auto& c:_channels)
         _subscriber->unsubscribe(c);
+
+    _channels.clear();
 }
 
 bool RedisEventProcessor::Publish(const std::string& channel,const std::string& msg)
@@ -208,6 +212,18 @@ void RedisEventProcessor::Reconnect()
         _redis=std::make_shared<sw::redis::Redis>(opt);
 
         _subscriber=std::make_unique<sw::redis::Subscriber>(_redis->subscriber());
+
+        _subscriber->on_message(
+        [this](std::string channel,std::string msg)
+        {
+            PushMessage(channel,msg);
+        });
+
+        _subscriber->on_pmessage(
+        [this](std::string pattern,std::string channel,std::string msg)
+        {
+            PushMessage(channel,msg);
+        });
 
         ReSubscribe();
     }
