@@ -1,3 +1,5 @@
+// $ redis-cli publish alarm1 hello
+
 #include "RedisEvent.h"
 #include <iostream>
 
