@@ -19,6 +19,7 @@ $(TARGET): $(OBJ)
 
 test: $(TARGET)
 	$(CXX) $(CXXFLAGS) test/main.cpp -Iinclude -L. -lredis_sdk $(LIBS) -o test_app
+	$(CXX) $(CXXFLAGS) test/eventtest.cpp -Iinclude -L. -lredis_sdk $(LIBS) -o test_event
 
 clean:
 	rm -f src/*.o *.a test_app
