@@ -1,7 +1,9 @@
 CXX=g++
 CXXFLAGS=-std=c++17 -O2 -pthread
 
-INCLUDE=-I./include
+LOCAL_PREFIX=$(HOME)/.local
+INCLUDE=-I./include -I$(LOCAL_PREFIX)/include
+LDFLAGS=-L$(LOCAL_PREFIX)/lib64 -L$(LOCAL_PREFIX)/lib -Wl,-rpath,$(LOCAL_PREFIX)/lib64 -Wl,-rpath,$(LOCAL_PREFIX)/lib
 LIBS=-lredis++ -lhiredis
 
 SRC=$(wildcard src/*.cpp)
@@ -18,7 +20,7 @@ $(TARGET): $(OBJ)
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 test: $(TARGET)
-	$(CXX) $(CXXFLAGS) test/main.cpp -Iinclude -L. -lredis_sdk $(LIBS) -o test_app
+	$(CXX) $(CXXFLAGS) $(INCLUDE) test/main.cpp -L. -lredis_sdk $(LDFLAGS) $(LIBS) -o test_app
 
 clean:
 	rm -f src/*.o *.a test_app
