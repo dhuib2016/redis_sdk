@@ -1,0 +1,8 @@
+# Build artifacts
+*.o
+*.a
+test_app
+
+# Editor/IDE
+.vscode/
+.claude/

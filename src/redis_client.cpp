@@ -25,7 +25,10 @@ namespace msgsdk
     {
         try
         {
-            redis_ = std::make_unique<sw::redis::Redis>(uri);
+            sw::redis::Uri parsed(uri);
+            ConnectionPoolOptions pool_opts = parsed.connection_pool_options();
+            pool_opts.size = pool_size_;
+            redis_ = std::make_unique<sw::redis::Redis>(parsed.connection_options(), pool_opts);
             sub_ = std::make_unique<sw::redis::Subscriber>(redis_->subscriber());
             return true;
         }
@@ -46,7 +49,9 @@ namespace msgsdk
             if (!auth_.empty())
                 opts.password = auth_;
 
-            redis_ = std::make_unique<Redis>(opts);
+            ConnectionPoolOptions pool_opts;
+            pool_opts.size = pool_size_;
+            redis_ = std::make_unique<Redis>(opts, pool_opts);
             return true;
         }
         catch (...)
@@ -263,11 +268,22 @@ namespace msgsdk
         try
         {
             if (!append)
-                redis_->del(key);
-            
+            {
+                if (value.empty())
+                {
+                    redis_->del(key);
+                    return true;
+                }
+                auto pipe = redis_->pipeline();
+                pipe.del(key);
+                pipe.rpush(key, value.begin(), value.end());
+                pipe.exec();
+                return true;
+            }
+
             if (value.empty())
                 return true;
-            
+
             redis_->rpush(key, value.begin(), value.end());
             return true;
         }
@@ -282,11 +298,22 @@ namespace msgsdk
         try
         {
             if (!append)
-                redis_->del(key);
-            
+            {
+                if (value.empty())
+                {
+                    redis_->del(key);
+                    return true;
+                }
+                auto pipe = redis_->pipeline();
+                pipe.del(key);
+                pipe.sadd(key, value.begin(), value.end());
+                pipe.exec();
+                return true;
+            }
+
             if (value.empty())
                 return true;
-            
+
             redis_->sadd(key, value.begin(), value.end());
             return true;
         }
@@ -301,11 +328,22 @@ namespace msgsdk
         try
         {
             if (!append)
-                redis_->del(key);
-            
+            {
+                if (value.empty())
+                {
+                    redis_->del(key);
+                    return true;
+                }
+                auto pipe = redis_->pipeline();
+                pipe.del(key);
+                pipe.hmset(key, value.begin(), value.end());
+                pipe.exec();
+                return true;
+            }
+
             if (value.empty())
                 return true;
-            
+
             redis_->hmset(key, value.begin(), value.end());
             return true;
         }
