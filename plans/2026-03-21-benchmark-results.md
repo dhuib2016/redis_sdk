@@ -9,21 +9,75 @@
 
 Each benchmark times a tight loop of N operations using `high_resolution_clock` and computes QPS as `N * 1000 / ms`.
 
+### Group 1: String key-value (sequential vs pipelined)
+
+Simple `redis.set(key, value)` / `redis.get(key, value)` on plain string keys.
+Both sequential (one command per round-trip) and pipelined (1000 commands batched per `exec()`) variants exist because `RedisPipeline` wraps `set()` and `get()`.
+
 | Benchmark | Function Under Test | What It Proves |
 |---|---|---|
 | SET sequential | `RedisClient::set()` | Single-connection string write throughput |
 | SET pipelined | `RedisPipeline::set()` + `exec()` | Batched write throughput (1000/batch) |
 | GET sequential | `RedisClient::get()` | Single-connection string read throughput |
 | GET pipelined | `RedisPipeline::get()` + `exec()` | Batched read throughput (1000/batch) |
-| LIST-SET sequential | `SetData(key, vector, false)` | Internal pipeline optimization: DEL+RPUSH in 1 round-trip |
+
+### Group 2: Redis LIST (vector\<string\>, 1000 elements/key)
+
+Writes via `SetData(key, vector, false)` which does DEL+RPUSH. Reads via `GetData(key, vector)` which does LRANGE.
+
+- **LIST-SET has both sequential and pipelined** because `RedisPipeline` wraps `del()` and `rpush()`.
+- **LIST-GET has sequential only** because `RedisPipeline` does not wrap `lrange()`.
+
+| Benchmark | Function Under Test | What It Proves |
+|---|---|---|
+| LIST-SET sequential | `SetData(key, vector, false)` | Internal pipeline: DEL+RPUSH in 1 round-trip |
 | LIST-SET pipelined | `RedisPipeline::del()` + `rpush()` + `exec()` | External pipeline for list writes (1000/batch) |
 | LIST-GET | `GetData(key, vector)` via `lrange` | List read throughput (1000 elements/key) |
-| SET-TYPE sequential | `SetData(key, set, false)` | Internal pipeline optimization: DEL+SADD in 1 round-trip |
+
+### Group 3: Redis SET (set\<string\>, 100 members/key)
+
+Writes via `SetData(key, set, false)` which does DEL+SADD. Reads via `GetData(key, set)` which does SMEMBERS.
+
+**Sequential only** — `RedisPipeline` does not wrap `sadd()` or `smembers()`, so no pipelined variant exists.
+
+| Benchmark | Function Under Test | What It Proves |
+|---|---|---|
+| SET-TYPE sequential | `SetData(key, set, false)` | Internal pipeline: DEL+SADD in 1 round-trip |
 | SET-TYPE GET | `GetData(key, set)` via `smembers` | Set read throughput (100 members/key) |
-| HASH-SET sequential | `SetData(key, map, false)` | Internal pipeline optimization: DEL+HMSET in 1 round-trip |
+
+### Group 4: Redis HASH (map\<string,string\>, 100 fields/key)
+
+Writes via `SetData(key, map, false)` which does DEL+HMSET. Reads via `GetData(key, map)` which does HGETALL.
+
+**Sequential only** — `RedisPipeline` does not wrap `hmset()` or `hgetall()`, so no pipelined variant exists.
+
+| Benchmark | Function Under Test | What It Proves |
+|---|---|---|
+| HASH-SET sequential | `SetData(key, map, false)` | Internal pipeline: DEL+HMSET in 1 round-trip |
 | HASH-GET | `GetData(key, map)` via `hgetall` | Hash read throughput (100 fields/key) |
-| SET multi-thread | 4 threads × `set()` | Connection pool concurrent write scaling |
-| GET multi-thread | 4 threads × `get()` | Connection pool concurrent read scaling |
+
+### Group 5: Multi-threaded (connection pool)
+
+4 threads each do 25,000 simple string `set()`/`get()` calls concurrently against the same `RedisClient` instance. With connection pool (pool_size=4), each thread gets its own connection. Without the pool, all 4 threads would serialize on a single connection and achieve roughly the same QPS as sequential.
+
+| Benchmark | Function Under Test | What It Proves |
+|---|---|---|
+| SET multi-thread | 4 threads × `RedisClient::set()` | Connection pool concurrent write scaling |
+| GET multi-thread | 4 threads × `RedisClient::get()` | Connection pool concurrent read scaling |
+
+### Coverage gaps
+
+The following pipelined benchmarks are **missing** because `RedisPipeline` does not expose the corresponding commands:
+
+| Missing benchmark | Blocked by |
+|---|---|
+| LIST-GET pipelined | `RedisPipeline` has no `lrange()` |
+| SET-TYPE pipelined | `RedisPipeline` has no `sadd()` |
+| SET-TYPE GET pipelined | `RedisPipeline` has no `smembers()` |
+| HASH-SET pipelined | `RedisPipeline` has no `hmset()` |
+| HASH-GET pipelined | `RedisPipeline` has no `hgetall()` |
+
+These could be added by extending `RedisPipeline` in `include/redis_pipeline.h`.
 
 ## Baseline (before optimization, single connection, no internal pipeline)
 
