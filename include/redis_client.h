@@ -99,6 +99,7 @@ namespace msgsdk
         std::string ip_;
         int port_ = 6379;
         std::string auth_;
+        int pool_size_ = 4;
         
         // Redis 连接
         std::unique_ptr<sw::redis::Redis> redis_;

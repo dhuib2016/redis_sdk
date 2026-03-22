@@ -3,6 +3,7 @@
 #include <iostream>
 #include <chrono>
 #include <vector>
+#include <thread>
 
 using namespace std::chrono;
 
@@ -166,6 +167,62 @@ int main()
                       << ", total=" << ms << "ms"
                       << ", qps=" << qps << std::endl;
         }
+    }
+
+    // Multi-threaded SET benchmark
+    {
+        const int THREADS = 4;
+        const int OPS_PER_THREAD = N / THREADS;
+        auto start = high_resolution_clock::now();
+
+        std::vector<std::thread> threads;
+        for (int t = 0; t < THREADS; ++t) {
+            threads.emplace_back([&redis, t, OPS_PER_THREAD]() {
+                for (int i = 0; i < OPS_PER_THREAD; ++i) {
+                    std::string key = "perf:mt:set:" + std::to_string(t) + ":" + std::to_string(i);
+                    std::string val = "value-" + std::to_string(i);
+                    redis.set(key, val);
+                }
+            });
+        }
+        for (auto& th : threads) th.join();
+
+        auto end = high_resolution_clock::now();
+        auto ms = duration_cast<milliseconds>(end - start).count();
+        double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
+
+        std::cout << "[SET multi-thread] threads=" << THREADS
+                  << ", count=" << N
+                  << ", total=" << ms << "ms"
+                  << ", qps=" << qps << std::endl;
+    }
+
+    // Multi-threaded GET benchmark
+    {
+        const int THREADS = 4;
+        const int OPS_PER_THREAD = N / THREADS;
+        auto start = high_resolution_clock::now();
+
+        std::vector<std::thread> threads;
+        for (int t = 0; t < THREADS; ++t) {
+            threads.emplace_back([&redis, t, OPS_PER_THREAD]() {
+                std::string val;
+                for (int i = 0; i < OPS_PER_THREAD; ++i) {
+                    std::string key = "perf:mt:set:" + std::to_string(t) + ":" + std::to_string(i);
+                    redis.get(key, val);
+                }
+            });
+        }
+        for (auto& th : threads) th.join();
+
+        auto end = high_resolution_clock::now();
+        auto ms = duration_cast<milliseconds>(end - start).count();
+        double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
+
+        std::cout << "[GET multi-thread] threads=" << THREADS
+                  << ", count=" << N
+                  << ", total=" << ms << "ms"
+                  << ", qps=" << qps << std::endl;
     }
 
     return 0;
