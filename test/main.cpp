@@ -3,6 +3,8 @@
 #include <iostream>
 #include <chrono>
 #include <vector>
+#include <set>
+#include <map>
 #include <thread>
 
 using namespace std::chrono;
@@ -164,6 +166,92 @@ int main()
 
             std::cout << "[LIST-GET]   keys=" << N
                       << ", list_len=" << M
+                      << ", total=" << ms << "ms"
+                      << ", qps=" << qps << std::endl;
+        }
+    }
+
+    // SET-type (sadd) benchmarks
+    {
+        const int M = 100;
+        std::set<std::string> values;
+        for (int i = 0; i < M; ++i)
+            values.insert("member-" + std::to_string(i));
+
+        // SET-SET sequential
+        {
+            auto start = high_resolution_clock::now();
+            for (int i = 0; i < N; ++i) {
+                std::string key = "perf:set_type:" + std::to_string(i);
+                redis.SetData(key, values, false);
+            }
+            auto end = high_resolution_clock::now();
+            auto ms = duration_cast<milliseconds>(end - start).count();
+            double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
+
+            std::cout << "[SET-TYPE sequential]  keys=" << N
+                      << ", set_size=" << M
+                      << ", total=" << ms << "ms"
+                      << ", qps=" << qps << std::endl;
+        }
+
+        // SET-GET sequential
+        {
+            auto start = high_resolution_clock::now();
+            std::set<std::string> out;
+            for (int i = 0; i < N; ++i) {
+                std::string key = "perf:set_type:" + std::to_string(i);
+                redis.GetData(key, out);
+            }
+            auto end = high_resolution_clock::now();
+            auto ms = duration_cast<milliseconds>(end - start).count();
+            double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
+
+            std::cout << "[SET-TYPE GET]   keys=" << N
+                      << ", set_size=" << M
+                      << ", total=" << ms << "ms"
+                      << ", qps=" << qps << std::endl;
+        }
+    }
+
+    // HASH-type (hmset) benchmarks
+    {
+        const int M = 100;
+        std::map<std::string, std::string> values;
+        for (int i = 0; i < M; ++i)
+            values["field-" + std::to_string(i)] = "val-" + std::to_string(i);
+
+        // HASH-SET sequential
+        {
+            auto start = high_resolution_clock::now();
+            for (int i = 0; i < N; ++i) {
+                std::string key = "perf:hash:" + std::to_string(i);
+                redis.SetData(key, values, false);
+            }
+            auto end = high_resolution_clock::now();
+            auto ms = duration_cast<milliseconds>(end - start).count();
+            double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
+
+            std::cout << "[HASH-SET sequential]  keys=" << N
+                      << ", fields=" << M
+                      << ", total=" << ms << "ms"
+                      << ", qps=" << qps << std::endl;
+        }
+
+        // HASH-GET sequential
+        {
+            auto start = high_resolution_clock::now();
+            std::map<std::string, std::string> out;
+            for (int i = 0; i < N; ++i) {
+                std::string key = "perf:hash:" + std::to_string(i);
+                redis.GetData(key, out);
+            }
+            auto end = high_resolution_clock::now();
+            auto ms = duration_cast<milliseconds>(end - start).count();
+            double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
+
+            std::cout << "[HASH-GET]   keys=" << N
+                      << ", fields=" << M
                       << ", total=" << ms << "ms"
                       << ", qps=" << qps << std::endl;
         }
