@@ -21,15 +21,21 @@ namespace msgsdk
             sub_thread_.join();
     }
     
-    bool RedisClient::connect(const std::string& uri)
+    bool RedisClient::connect(const std::string& uri, int pool_size)
     {
         try
         {
             sw::redis::Uri parsed(uri);
+
             ConnectionPoolOptions pool_opts = parsed.connection_pool_options();
-            pool_opts.size = pool_size_;
+            if (pool_size > 0)
+                pool_opts.size = pool_size;
+            else
+                pool_opts.size = pool_size_;
+
             redis_ = std::make_unique<sw::redis::Redis>(parsed.connection_options(), pool_opts);
             sub_ = std::make_unique<sw::redis::Subscriber>(redis_->subscriber());
+
             return true;
         }
         catch (...)

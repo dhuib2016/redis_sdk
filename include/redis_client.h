@@ -31,7 +31,7 @@ namespace msgsdk
         ~RedisClient();
         
         // 连接相关
-        bool connect(const std::string& uri = "tcp://127.0.0.1:6379");
+        bool connect(const std::string& uri = "tcp://127.0.0.1:6379", int pool_size=0);
         bool confConnect();
         bool ReConnect();
         bool IsConnected();

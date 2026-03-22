@@ -313,5 +313,47 @@ int main()
                   << ", qps=" << qps << std::endl;
     }
 
+    // Connection pool benchmark
+    {
+        std::vector<int> pool_sizes = {1, 2, 4, 8, 16};
+        const int THREADS = 8;
+        const int OPS_PER_THREAD = N / THREADS;
+
+        for (auto pool_size : pool_sizes)
+        {
+            msgsdk::RedisClient redis;
+
+            if (!redis.connect("tcp://127.0.0.1:6379",pool_size)) {
+                std::cerr << "connect failed, pool=" << pool_size << std::endl;
+                continue;
+            }
+
+            auto start = high_resolution_clock::now();
+
+            std::vector<std::thread> threads;
+
+            for (int t = 0; t < THREADS; ++t) {
+                threads.emplace_back([&redis, t, OPS_PER_THREAD]() {
+                    for (int i = 0; i < OPS_PER_THREAD; ++i) {
+                        std::string key = "perf:pool:set:" +
+                            std::to_string(t) + ":" + std::to_string(i);
+                        redis.set(key, "value");
+                    }
+                });
+            }
+
+            for (auto& th : threads) th.join();
+
+            auto end = high_resolution_clock::now();
+            auto ms = duration_cast<milliseconds>(end - start).count();
+            double qps = (ms > 0) ? (N * 1000.0 / ms) : 0.0;
+
+            std::cout << "[POOL TEST] size=" << pool_size
+                    << ", threads=" << THREADS
+                    << ", total=" << ms << "ms"
+                    << ", qps=" << qps << std::endl;
+        }
+    }
+
     return 0;
 }
